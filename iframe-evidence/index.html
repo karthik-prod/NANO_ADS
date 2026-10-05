@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nano iframe evidence</title>
+<style>
+  body { margin: 0; padding: 16px; font-family: system-ui, sans-serif; color: #111; background: #fff; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  p.lead { margin: 0 0 20px; color: #444; max-width: 900px; }
+  .case { border: 1px solid #ddd; border-radius: 8px; padding: 14px; margin-bottom: 16px; }
+  .case h2 { font-size: 16px; margin: 0 0 4px; }
+  .case p { margin: 0 0 10px; color: #444; font-size: 14px; }
+  .views { display: flex; gap: 24px; flex-wrap: wrap; }
+  .view label { display: block; font-size: 12px; color: #666; margin-bottom: 4px; }
+  .slot { position: relative; width: 300px; border: 0; display: block; background: #f4f4f4; }
+  .debug { position: relative; width: 300px; height: 150px; }
+  .debug iframe { width: 300px; height: 150px; border: 0; background: #f4f4f4; }
+  .debug .line { position: absolute; left: 0; right: 0; top: 50px; border-top: 2px dashed #d00; pointer-events: none; }
+  .debug .tag { position: absolute; right: 4px; top: 52px; font-size: 11px; color: #d00; pointer-events: none; }
+  .result { font-size: 13px; margin-top: 8px; font-family: ui-monospace, monospace; }
+  .bad { color: #b00; } .good { color: #070; }
+</style>
+</head>
+<body>
+<h1>Nano Ads: where the DV creative renders</h1>
+<p class="lead">Same DoubleVerify / DV360 creative (from the NANO_ADS repo, "Error Creative") and the same Nano template in all three cases.
+DV's script (<code>dv3.js</code>) adds the real ad iframe to the end of <code>&lt;body&gt;</code>, not where the ad code sits.
+"Debug view" makes the frame 150px tall so you can see what falls below the 300×50 slot (red line).</p>
+
+<div class="case" data-src="A_stitched_no_iframe.html">
+  <h2>A. Today: ad code stitched straight into the template (no iframe)</h2>
+  <p>ebda replaces <code>{{adcode}}</code> with the bidder ad code as plain text.</p>
+  <div class="views">
+    <div class="view"><label>What the user sees (300×50)</label><iframe class="slot" height="50" scrolling="no" src="A_stitched_no_iframe.html"></iframe></div>
+    <div class="view"><label>Debug view (300×150)</label><div class="debug"><iframe scrolling="no" src="A_stitched_no_iframe.html"></iframe><div class="line"></div><div class="tag">slot ends</div></div></div>
+  </div>
+  <div class="result"></div>
+</div>
+
+<div class="case" data-src="B_iframe_outside_template.html">
+  <h2>B. Sourceful iframe OUTSIDE the template (iframe wraps template + ad code)</h2>
+  <p>The iframe loads the whole stitched page by URL. The ad still escapes the template, just inside the iframe, so it falls out of the visible slot.</p>
+  <div class="views">
+    <div class="view"><label>What the user sees (300×50)</label><iframe class="slot" height="50" scrolling="no" src="B_iframe_outside_template.html"></iframe></div>
+    <div class="view"><label>Debug view (300×150)</label><div class="debug"><iframe scrolling="no" src="A_stitched_no_iframe.html"></iframe><div class="line"></div><div class="tag">iframe ends</div></div></div>
+  </div>
+  <div class="result"></div>
+</div>
+
+<div class="case" data-src="C_iframe_inside_template.html">
+  <h2>C. Proposed: sourceful iframe INSIDE the template (wraps only the bidder ad code)</h2>
+  <p>The template holds <code>&lt;iframe src="renderer.html"&gt;</code>. ebda's <code>{{adcode}}</code> replace is unchanged; the template posts the ad code into the renderer.</p>
+  <div class="views">
+    <div class="view"><label>What the user sees (300×50)</label><iframe class="slot" height="50" scrolling="no" src="C_iframe_inside_template.html"></iframe></div>
+    <div class="view"><label>Debug view (300×150)</label><div class="debug"><iframe scrolling="no" src="C_iframe_inside_template.html"></iframe><div class="line"></div><div class="tag">slot ends</div></div></div>
+  </div>
+  <div class="result"></div>
+</div>
+
+<script>
+  // Find the DV ad iframe (adfetch URL) in a document or its same-origin child frames.
+  function findAd(doc, offsetY) {
+    var frames = doc.querySelectorAll('iframe');
+    for (var i = 0; i < frames.length; i++) {
+      var f = frames[i], r = f.getBoundingClientRect();
+      if ((f.src || '').indexOf('adfetch') > -1 && r.height > 0) {
+        var inTemplate = !!f.closest('.ed-slot-wrapper');
+        return { y: offsetY + r.top, parent: f.parentElement.tagName.toLowerCase(), inTemplate: inTemplate };
+      }
+      try { var hit = findAd(f.contentDocument, offsetY + r.top); if (hit) return hit; } catch (e) {}
+    }
+    return null;
+  }
+  setTimeout(function () {
+    document.querySelectorAll('.case').forEach(function (c) {
+      var out = c.querySelector('.result');
+      var hit = findAd(c.querySelector('.slot').contentDocument, 0);
+      if (!hit) { out.textContent = 'DV ad iframe not found (creative may have expired).'; return; }
+      var visible = hit.y < 50;
+      out.className = 'result ' + (visible ? 'good' : 'bad');
+      out.textContent = 'DV ad iframe: top = ' + Math.round(hit.y) + 'px in the 300×50 slot → ' +
+        (visible ? 'visible inside the slot' : 'outside the visible slot');
+    });
+  }, 4000);
+</script>
+</body>
+</html>
